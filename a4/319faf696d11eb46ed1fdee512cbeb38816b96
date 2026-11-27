@@ -1,0 +1,21 @@
+.github/workflows/build-and-release.yml
+  s_cdef0ae5ed065d::t_c943af8699e22d 228-230
+  s_cdef0ae5ed065d::t_354478a34420da 327-333
+  s_cdef0ae5ed065d::t_0b3d26ed3f55e4 306-326,334,340,358
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a4319faf696d11eb46ed1fdee512cbeb38816b96",
+  "prompts": {},
+  "sessions": {
+    "s_cdef0ae5ed065d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "39da84bd-afa9-4b52-bf13-6dc938c1ae15",
+        "model": "maas-glm-5-3-260814"
+      },
+      "human_author": "y00798287 <yangwei1@huawei.com>"
+    }
+  }
+}
