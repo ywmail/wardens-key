@@ -8,6 +8,10 @@ inputs:
   remote_tag:
     description: 'The remote git tag to use for the download URL (e.g., browser-v2024.6.0).'
     required: true
+  github_token:
+    description: 'Token used when querying the GitHub API for the release asset list (avoids rate limits).'
+    required: false
+    default: ${{ github.token }}
 
 outputs:
   source_path:
@@ -21,9 +25,77 @@ runs:
       id: download-source
       shell: bash
       run: |
-        echo "=== Downloading browser source v${{ inputs.remote_version }} ==="
-        DOWNLOAD_URL="https://github.com/bitwarden/clients/releases/download/${{ inputs.remote_tag }}/browser-source-${{ inputs.remote_version }}.zip"
+        REMOTE_TAG="${{ inputs.remote_tag }}"
+        REMOTE_VERSION="${{ inputs.remote_version }}"
+        echo "=== Downloading browser source v${REMOTE_VERSION} (tag: ${REMOTE_TAG}) ==="
+
+        # Resolve the source asset name from the release instead of hardcoding it.
+        # Upstream has renamed release assets before (e.g. 2026.11.0 renamed
+        # browser-source-X.zip -> oss-browser-source-X.zip), so always ask the
+        # release for its actual asset list.
+        RELEASE_API="https://api.github.com/repos/bitwarden/clients/releases/tags/${REMOTE_TAG}"
+        ASSET_LIST=""
+        for attempt in 1 2 3; do
+          ASSET_LIST=$(curl -sSf -H "Authorization: Bearer ${{ inputs.github_token }}" -H "Accept: application/vnd.github+json" "$RELEASE_API" | jq -r '.assets[].name' 2>/dev/null || true)
+          if [[ -n "$ASSET_LIST" ]]; then
+            break
+          fi
+          echo "⚠️ Failed to list release assets (attempt ${attempt}/3), retrying in 10s..."
+          sleep 10
+        done
+        if [[ -z "$ASSET_LIST" ]]; then
+          echo "❌ Could not list assets at: $RELEASE_API"
+          exit 1
+        fi
+        echo "Available assets in ${REMOTE_TAG}:"
+        sed 's/^/  - /' <<<"$ASSET_LIST"
+
+        # Pick the source asset by preference, first match wins.
+        # Upstream asset names have changed over time, so match by pattern
+        # instead of hardcoding. "bit-" prefix is the commercial flavor and
+        # is used only as a last resort:
+        #   1. browser-source-V.zip            legacy name (<= 2026.10.x)
+        #   2. oss-browser-source-V.zip        OSS flavor (>= 2026.11.0)
+        #   3. <prefix>-browser-source-V.zip   any other rename (non-bit flavors)
+        #   4. <anything>-source-V.zip         generic catch-all for future renames (non-bit)
+        #   5. bit-browser-source-V.zip        commercial flavor, last resort
+        resolve_asset() {
+          local pattern="$1" allow_bit="$2" matches
+          matches=$(grep -E "$pattern" <<<"$ASSET_LIST" 2>/dev/null || true)
+          if [[ -n "$matches" && "$allow_bit" != "yes" ]]; then
+            matches=$(grep -v '^bit-' <<<"$matches" 2>/dev/null || true)
+          fi
+          if [[ -n "$matches" ]]; then
+            head -1 <<<"$matches"
+          fi
+          return 0
+        }
+
+        SOURCE_ASSET=$(resolve_asset "^browser-source-${REMOTE_VERSION}\.zip$")
+        if [[ -z "$SOURCE_ASSET" ]]; then
+          SOURCE_ASSET=$(resolve_asset "^oss-browser-source-${REMOTE_VERSION}\.zip$")
+        fi
+        if [[ -z "$SOURCE_ASSET" ]]; then
+          SOURCE_ASSET=$(resolve_asset "^[a-z0-9-]+-browser-source-${REMOTE_VERSION}\.zip$")
+        fi
+        if [[ -z "$SOURCE_ASSET" ]]; then
+          SOURCE_ASSET=$(resolve_asset "browser-source-${REMOTE_VERSION}\.zip$")
+        fi
+        if [[ -z "$SOURCE_ASSET" ]]; then
+          SOURCE_ASSET=$(resolve_asset "source-${REMOTE_VERSION}\.zip$")
+        fi
+        if [[ -z "$SOURCE_ASSET" ]]; then
+          SOURCE_ASSET=$(resolve_asset "^bit-browser-source-${REMOTE_VERSION}\.zip$" yes)
+        fi
+        if [[ -z "$SOURCE_ASSET" ]]; then
+          echo "❌ No browser source asset found for version ${REMOTE_VERSION} in ${REMOTE_TAG}"
+          exit 1
+        fi
+
+        DOWNLOAD_URL="https://github.com/bitwarden/clients/releases/download/${REMOTE_TAG}/${SOURCE_ASSET}"
+        echo "Resolved source asset: ${SOURCE_ASSET}"
         echo "Download URL: $DOWNLOAD_URL"
+        echo "source_asset=${SOURCE_ASSET}" >> $GITHUB_OUTPUT
 
         # Download with retry mechanism
         for i in {1..3}; do
