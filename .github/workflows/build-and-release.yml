@@ -225,6 +225,9 @@ jobs:
     strategy:
       matrix:
         include:
+          # `archive_name` is the historic output name; upstream renamed build
+          # outputs in 2026.11.0 (dist-X.zip -> oss-dist-X.zip), so the build
+          # step resolves the actual artifact dynamically (see "Build extension").
           - name: "chrome"
             npm_command: "dist:chrome"
             archive_name: "dist-chrome.zip"
@@ -300,12 +303,41 @@ jobs:
           npm run ${{ matrix.npm_command }}
           echo "=== Checking build output ==="
           ls -la dist/ || echo "No dist directory found"
+
+          # Resolve the actual archive produced by the build. Upstream renamed
+          # build outputs in 2026.11.0 (dist-X.zip -> oss-dist-X.zip), so match
+          # by pattern instead of trusting the hardcoded name:
+          #   1. oss-dist-<name>.zip     OSS flavor (>= 2026.11.0)
+          #   2. dist-<name>.zip         legacy name (<= 2026.10.x)
+          #   3. *dist-<name>.zip        catch-all for future renames (non-bit)
+          BASE_NAME="${{ matrix.archive_name }}"   # e.g. dist-chrome.zip
+          STEM="${BASE_NAME%.zip}"                # e.g. dist-chrome
+          ACTUAL_ZIP=$(ls dist/ 2>/dev/null | grep -E "^oss-${STEM}\.zip$" | head -1 || true)
+          if [[ -z "$ACTUAL_ZIP" ]]; then
+            ACTUAL_ZIP=$(ls dist/ 2>/dev/null | grep -E "^${STEM}\.zip$" | head -1 || true)
+          fi
+          if [[ -z "$ACTUAL_ZIP" ]]; then
+            ACTUAL_ZIP=$(ls dist/ 2>/dev/null | grep -E "[a-z0-9-]*-${STEM}\.zip$" | grep -v '^bit-' | head -1 || true)
+          fi
+          if [[ -z "$ACTUAL_ZIP" ]]; then
+            echo "❌ Build produced no archive matching ${BASE_NAME} (dist/ contents above)"
+            exit 1
+          fi
+          echo "Resolved build output: ${ACTUAL_ZIP}"
+          # Normalize the archive name so release assets keep this repo's
+          # historical naming (dist-chrome.zip) regardless of upstream renames.
+          if [[ "$ACTUAL_ZIP" != "$BASE_NAME" ]]; then
+            mv "dist/${ACTUAL_ZIP}" "dist/${BASE_NAME}"
+            echo "Renamed dist/${ACTUAL_ZIP} -> dist/${BASE_NAME}"
+            ACTUAL_ZIP="$BASE_NAME"
+          fi
+          echo "ACTUAL_ZIP=${ACTUAL_ZIP}" >> $GITHUB_ENV
         working-directory: browser-source/apps/browser
 
       - name: Inject fixed extension ID key into dist
         if: vars.EXTENSION_PUBLIC_KEY != '' && (matrix.name == 'chrome' || matrix.name == 'edge' || matrix.name == 'opera-mv3')
         run: |
-          DIST_ZIP="dist/${{ matrix.archive_name }}"
+          DIST_ZIP="dist/${ACTUAL_ZIP}"
           TEMP_DIR="dist_key_inject_tmp"
           mkdir -p "$TEMP_DIR"
           unzip -q "$DIST_ZIP" -d "$TEMP_DIR"
@@ -323,7 +355,7 @@ jobs:
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
           name: ${{ matrix.artifact_name }}-${{ env._BUILD_NUMBER }}
-          path: browser-source/apps/browser/dist/${{ matrix.archive_name }}
+          path: browser-source/apps/browser/dist/${{ env.ACTUAL_ZIP }}
           if-no-files-found: error
 
   create-tag:
