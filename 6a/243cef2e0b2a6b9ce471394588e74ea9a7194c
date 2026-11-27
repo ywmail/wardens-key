@@ -1,0 +1,24 @@
+.github/actions/setup-source/action.yml
+  s_cdef0ae5ed065d::t_a730b39c065f4a 28-38,40-52,57-61,67,70-73,78,80-81,83-84,86-87,89-96,98
+  s_cdef0ae5ed065d::t_58ec3853d3c422 39
+  s_cdef0ae5ed065d::t_c234a48da932a9 11-14
+  s_cdef0ae5ed065d::t_c1418780b20636 53-56,62-66,68-69,74-77,79,82,85,88
+.github/workflows/build-and-release.yml
+  s_cdef0ae5ed065d::t_39e0b388e33b14 61-71
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6a243cef2e0b2a6b9ce471394588e74ea9a7194c",
+  "prompts": {},
+  "sessions": {
+    "s_cdef0ae5ed065d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "39da84bd-afa9-4b52-bf13-6dc938c1ae15",
+        "model": "maas-glm-5-3-260814"
+      },
+      "human_author": "y00798287 <yangwei1@huawei.com>"
+    }
+  }
+}
